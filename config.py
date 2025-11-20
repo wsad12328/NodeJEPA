@@ -18,4 +18,4 @@ class Config:
     # Paths
     checkpoint_dir = './checkpoints'
     model_save_path = './checkpoints/graph_jepa_pretrained.pth'
-    # model_save_path = './checkpoints/graph_jepa_epoch_30.pth'
+    # model_save_path = './checkpoints/graph_jepa_epoch_50.pth'

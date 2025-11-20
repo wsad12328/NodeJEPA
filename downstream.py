@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from torch_geometric.datasets import Planetoid
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score, f1_score
+from sklearn.metrics import accuracy_score
 from model.GraphJEPA import GraphJEPA
 import os  
 from config import Config
@@ -37,7 +37,7 @@ print(f"Model loaded from {Config.model_save_path}")
 # 使用 target_encoder 提取所有節點的嵌入（在完整圖上）
 with torch.no_grad():
     data = data.to(device)
-    node_embeddings = loaded_model.target_encoder.gnn(data.x, data.edge_index)
+    node_embeddings = loaded_model.target_encoder(data.x, data.edge_index)
 
 print(f"Node embeddings shape: {node_embeddings.shape}")
 
@@ -59,7 +59,7 @@ X_val, y_val = X[val_mask], y[val_mask]
 X_test, y_test = X[test_mask], y[test_mask]
 
 # 訓練 Logistic Regression 分類器
-classifier = LogisticRegression(max_iter=1000, random_state=42)
+classifier = LogisticRegression(max_iter=5000, random_state=42)
 classifier.fit(X_train, y_train)
 
 # 評估
@@ -71,11 +71,7 @@ train_acc = accuracy_score(y_train, train_pred)
 val_acc = accuracy_score(y_val, val_pred)
 test_acc = accuracy_score(y_test, test_pred)
 
-train_f1 = f1_score(y_train, train_pred, average='macro')
-val_f1 = f1_score(y_val, val_pred, average='macro')
-test_f1 = f1_score(y_test, test_pred, average='macro')
-
 print("Node Classification Results:")
-print(f"Train Accuracy: {train_acc:.4f}, F1: {train_f1:.4f}")
-print(f"Val Accuracy: {val_acc:.4f}, F1: {val_f1:.4f}")
-print(f"Test Accuracy: {test_acc:.4f}, F1: {test_f1:.4f}")
+print(f"Train Accuracy: {train_acc:.4f}")
+print(f"Val Accuracy: {val_acc:.4f}")
+print(f"Test Accuracy: {test_acc:.4f}")
