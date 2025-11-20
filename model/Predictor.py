@@ -29,9 +29,9 @@ class MLPPredictor(nn.Module):
         x = self.fc1(x)
         x = self.batch_norm1(x)
         x = F.leaky_relu(x)
-        x += x_residual  # 殘差連接
         x = F.dropout(x, p=self.dropout, training=self.training)
         x = self.fc2(x)
         x = self.batch_norm2(x)
-        
+        x = x + x_residual  # 殘差連接
+
         return x
