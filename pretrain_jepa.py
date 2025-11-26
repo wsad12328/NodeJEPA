@@ -1,133 +1,130 @@
 import torch
+import torch.nn.functional as F
 from torch_geometric.datasets import Planetoid
+from torch_cluster import random_walk
 from torch_geometric.loader import NeighborLoader
-from torch_geometric.data import Data, Batch
 from model.GraphJEPA import GraphJEPA
 from tqdm import tqdm
 import os
 from config import Config
+import numpy as np
+from utils.pe import compute_pe
 
-
-def train_epoch(model, loader, optimizer, device):
-    """
-    訓練一個 epoch (使用 NeighborLoader 加速)
-    
-    Args:
-        model: GraphJEPA 模型
-        loader: NeighborLoader
-        optimizer: 優化器
-        device: 設備
-    
-    Returns:
-        avg_loss: 平均損失
-    """
+def train_epoch(model, loader, optimizer, device, pe, current_tau):
     model.train()
     total_loss = 0
     num_samples = 0
     
-    # 遍歷 Batch
     for batch in tqdm(loader, desc="Training"):
         batch = batch.to(device)
-        batch_size = batch.batch_size
         
-        # Center Mask: NeighborLoader 保證前 batch_size 個節點是種子節點 (中心節點)
-        center_mask = torch.zeros(batch.num_nodes, dtype=torch.bool, device=device)
-        center_mask[:batch_size] = True
+        # Seed nodes (u) are the first batch_size nodes
+        u_idx = torch.arange(batch.batch_size, device=device)
         
-        # Target View (完整)
-        # batch 已經包含了完整的 2-hop 子圖信息
-        batch_target = batch
-        batch_target.center_mask = center_mask
+        # Perform random walks on the SUBGRAPH to find targets (v)
+        # We use the subgraph structure (batch.edge_index)
+        row, col = batch.edge_index
         
-        # Context View (Masked)
-        batch_context = batch.clone()
-        batch_context.x = batch.x.clone()
-        batch_context.x[center_mask] = 0  # Mask 中心節點特徵
-        batch_context.center_mask = center_mask
+        targets = []
+        for _ in range(Config.num_targets):
+            length = torch.randint(1, Config.walk_length + 1, (1,)).item()
+            # random_walk returns [start, step1, ..., end]
+            walk = random_walk(row, col, u_idx, walk_length=length, p=0.5, q=0.5)
+            v = walk[:, -1]
+            targets.append(v)
+
+        v_idx = torch.stack(targets, dim=1) # [B, M]
         
-        # 前向傳播
-        z_pred, z_target = model(batch_context, batch_target)
+        # Get PE for the nodes in the batch
+        # pe is global [N, k], batch.n_id maps subgraph nodes to global nodes
+        batch_pe = pe[batch.n_id]
         
-        # 計算損失
-        loss = model.compute_loss(z_pred, z_target)
+        pos_u = batch_pe[u_idx] # [B, k]
+        pos_v = batch_pe[v_idx] # [B, M, k]
         
-        # 反向傳播
+        loss = model(batch.x, batch.edge_index, u_idx, v_idx, pos_u, pos_v)
+        
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
         
-        # 動量更新 target_encoder
-        model.update_target_encoder()
+        model.update_target_encoder(decay=current_tau)
         
-        total_loss += loss.item() * batch_size
-        num_samples += batch_size
+        total_loss += loss.item() * batch.batch_size
+        num_samples += batch.batch_size
     
-    avg_loss = total_loss / num_samples if num_samples > 0 else 0
-    return avg_loss
+    return total_loss / num_samples
 
-
-# 使用範例
 if __name__ == "__main__":
-    
-    # 載入資料集
+    # Load Dataset
     dataset = Planetoid(root=Config.dataset_root, name=Config.dataset_name)
     data = dataset[0]
     
     print(f"Dataset: {dataset.name}")
-    print(f"Number of nodes: {data.num_nodes}")
-    print(f"Number of edges: {data.num_edges}")
-    print(f"Number of features: {data.num_features}")
+    print(f"Nodes: {data.num_nodes}, Edges: {data.num_edges}, Features: {data.num_features}")
     
-    # 初始化模型
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    # Phase 1: Geometry Pre-processing
+    pe = compute_pe(data, Config.pe_type, Config.pos_dim)
+    
+    # Phase 2: Data Pipeline
+    train_loader = NeighborLoader(
+        data,
+        num_neighbors=[-1]*6,
+        batch_size=Config.batch_size,
+        shuffle=True,
+    )
+    
+    # Phase 3: Model
+    device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
+    if device.type == 'cuda':
+        torch.cuda.set_device(device)
+    pe = pe.to(device)
     model = GraphJEPA(
         in_channels=dataset.num_features,
         hidden_channels=Config.hidden_channels,
+        pos_dim=Config.pos_dim,
         num_layers=Config.num_layers,
         ema_decay=Config.ema_decay,
-        dropout=Config.dropout
+        dropout=Config.dropout,
+        gnn_type=Config.gnn_type,
+        pe_type=Config.pe_type
     ).to(device)
     
-    # 優化器 (只訓練 context_encoder 和 predictor)
     optimizer = torch.optim.AdamW([
         {'params': model.context_encoder.parameters()},
-        {'params': model.predictor.parameters()}
+        {'params': model.predictor.parameters()},
+        {'params': model.pos_proj.parameters()}
     ], lr=Config.lr, weight_decay=Config.weight_decay)
     
-    # 建立 NeighborLoader
-    train_loader = NeighborLoader(
-        data,
-        num_neighbors=[-1] * 2,  # 2-hop, -1 表示取所有鄰居
-        batch_size=Config.batch_size,
-        shuffle=True,
-        num_workers=4  # 可以根據 CPU 核心數調整
-    )
+    checkpoint_dir = os.path.join(Config.checkpoint_dir, Config.dataset_name)
+    os.makedirs(checkpoint_dir, exist_ok=True)
     
-    # 訓練
-    num_epochs = Config.num_epochs
-    for epoch in range(num_epochs):
-        avg_loss = train_epoch(model, train_loader, optimizer, device)
-        print(f"Epoch {epoch+1}/{num_epochs}, Avg Loss: {avg_loss:.4f}")
+    # Phase 4: Training Loop
+    print("Starting training...")
+    for epoch in range(Config.num_epochs):
+        # Update tau
+        tau = Config.tau_start + (Config.tau_end - Config.tau_start) * epoch / Config.num_epochs
         
-        # 每 10 個 epoch 保存一次
+        loss = train_epoch(model, train_loader, optimizer, device, pe, tau)
+        
+        print(f"Epoch {epoch+1}/{Config.num_epochs} | Loss: {loss:.4f} | Tau: {tau:.4f}")
+        
         if (epoch + 1) % 10 == 0:
-            os.makedirs(Config.checkpoint_dir, exist_ok=True)
-            model_save_path = os.path.join(Config.checkpoint_dir, f'graph_jepa_epoch_{epoch+1}.pth')
+            save_path = os.path.join(checkpoint_dir, f'graph_jepa_epoch_{epoch+1}.pth')
             torch.save({
                 'model_state_dict': model.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
                 'epoch': epoch + 1,
-                'loss': avg_loss,
-            }, model_save_path)
-            print(f"Model saved to {model_save_path}")
-    
-    # 保存最終模型
-    os.makedirs(Config.checkpoint_dir, exist_ok=True)
+                'loss': loss
+            }, save_path)
+            
+    final_path = os.path.join(checkpoint_dir, 'graph_jepa_pretrained.pth')
     torch.save({
         'model_state_dict': model.state_dict(),
         'optimizer_state_dict': optimizer.state_dict(),
-        'epoch': num_epochs,
-        'loss': avg_loss,
-    }, Config.model_save_path)
-    print(f"Final model saved to {Config.model_save_path}")
-    print("Training complete.")
+        'epoch': Config.num_epochs,
+        'loss': loss
+    }, final_path)
+    print(f"Training complete. Model saved to {final_path}")
+
+
