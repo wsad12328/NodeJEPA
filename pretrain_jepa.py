@@ -6,9 +6,12 @@ from torch_geometric.loader import NeighborLoader
 from model.GraphJEPA import GraphJEPA
 from tqdm import tqdm
 import os
+import argparse
 from config import Config
 import numpy as np
 from utils.pe import compute_pe
+from utils.seed import set_seed
+import random
 
 def train_epoch(model, loader, optimizer, device, pe, current_tau):
     model.train()
@@ -16,10 +19,11 @@ def train_epoch(model, loader, optimizer, device, pe, current_tau):
     num_samples = 0
     
     for batch in tqdm(loader, desc="Training"):
-        batch = batch.to(device)
+        # Perform random walks on CPU for determinism
+        # batch is on CPU here
         
         # Seed nodes (u) are the first batch_size nodes
-        u_idx = torch.arange(batch.batch_size, device=device)
+        u_idx = torch.arange(batch.batch_size)
         
         # Perform random walks on the SUBGRAPH to find targets (v)
         # We use the subgraph structure (batch.edge_index)
@@ -29,11 +33,16 @@ def train_epoch(model, loader, optimizer, device, pe, current_tau):
         for _ in range(Config.num_targets):
             length = torch.randint(1, Config.walk_length + 1, (1,)).item()
             # random_walk returns [start, step1, ..., end]
-            walk = random_walk(row, col, u_idx, walk_length=length, p=0.5, q=0.5)
+            walk = random_walk(row, col, u_idx, walk_length=length, p=1, q=0.5)
             v = walk[:, -1]
             targets.append(v)
 
         v_idx = torch.stack(targets, dim=1) # [B, M]
+        
+        # Move data to device
+        batch = batch.to(device)
+        u_idx = u_idx.to(device)
+        v_idx = v_idx.to(device)
         
         # Get PE for the nodes in the batch
         # pe is global [N, k], batch.n_id maps subgraph nodes to global nodes
@@ -56,6 +65,16 @@ def train_epoch(model, loader, optimizer, device, pe, current_tau):
     return total_loss / num_samples
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--dataset', type=str, default='PubMed', help='Dataset name')
+    args = parser.parse_args()
+    
+    # Load Config
+    Config.load(args.dataset)
+    
+    # Set Seed
+    set_seed(Config.seed)
+    
     # Load Dataset
     dataset = Planetoid(root=Config.dataset_root, name=Config.dataset_name)
     data = dataset[0]
@@ -63,15 +82,28 @@ if __name__ == "__main__":
     print(f"Dataset: {dataset.name}")
     print(f"Nodes: {data.num_nodes}, Edges: {data.num_edges}, Features: {data.num_features}")
     
-    # Phase 1: Geometry Pre-processing
-    pe = compute_pe(data, Config.pe_type, Config.pos_dim)
+    # Phase 1: Geometry Pre-processing (Load PE)
+    pe_path = os.path.join(Config.pe_dir, f'{Config.pe_type.lower()}_pe_{Config.pos_dim}.pt')
+    if os.path.exists(pe_path):
+        print(f"Loading PE from {pe_path}")
+        pe = torch.load(pe_path)
+    else:
+        print(f"PE not found at {pe_path}. Computing...")
+        pe = compute_pe(data, Config.pe_type, Config.pos_dim)
+        os.makedirs(Config.pe_dir, exist_ok=True)
+        torch.save(pe, pe_path)
+        print(f"PE saved to {pe_path}")
     
     # Phase 2: Data Pipeline
+    g = torch.Generator()
+    g.manual_seed(Config.seed)
+    
     train_loader = NeighborLoader(
         data,
-        num_neighbors=[-1]*6,
+        num_neighbors=[-1]*10,
         batch_size=Config.batch_size,
         shuffle=True,
+        generator=g
     )
     
     # Phase 3: Model

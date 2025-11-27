@@ -35,5 +35,7 @@ class GNNEncoder(nn.Module):
         """
         for i, conv in enumerate(self.convs):
             x = conv(x, edge_index)
-            x = F.gelu(x)
+            if i != len(self.convs) - 1:
+                x = F.gelu(x)
+                x = F.dropout(x, p=self.dropout, training=self.training)
         return x

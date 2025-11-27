@@ -1,0 +1,32 @@
+dataset:
+  root: './data/Planetoid'
+  name: 'PubMed'
+
+model:
+  hidden_channels: 256
+  num_layers: 1
+  ema_decay: 0.996
+  dropout: 0.5
+  gnn_type: 'GCN'
+
+pe:
+  type: 'Laplacian'
+  pos_dim: 8
+
+sampling:
+  walk_length: 8
+  num_targets: 8
+
+training:
+  lr: 0.001
+  weight_decay: 5.0e-4
+  num_epochs: 20
+  batch_size: 64
+  tau_start: 0.996
+  tau_end: 1.0
+  seed: 42
+
+paths:
+  checkpoint_dir: './checkpoints'
+  model_save_path: 'graph_jepa_pretrained.pth'
+  pe_dir: './data/Planetoid/PubMed/processed'

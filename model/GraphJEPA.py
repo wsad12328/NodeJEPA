@@ -15,6 +15,7 @@ class PositionProjectionNetwork(nn.Module):
         super(PositionProjectionNetwork, self).__init__()
         self.net = nn.Sequential(
             nn.Linear(in_channels, out_channels),
+            nn.LayerNorm(out_channels),
             nn.GELU(),
             nn.Linear(out_channels, out_channels)
         )
