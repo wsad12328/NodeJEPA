@@ -100,7 +100,7 @@ if __name__ == "__main__":
     
     train_loader = NeighborLoader(
         data,
-        num_neighbors=[-1]*10,
+        num_neighbors=[-1]*6,
         batch_size=Config.batch_size,
         shuffle=True,
         generator=g
