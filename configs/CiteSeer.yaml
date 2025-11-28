@@ -11,7 +11,7 @@ model:
 
 pe:
   type: 'Laplacian'
-  pos_dim: 4
+  pos_dim: 8
 
 sampling:
   walk_length: 8
