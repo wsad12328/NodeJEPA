@@ -2,7 +2,9 @@ import torch
 import os
 import argparse
 import yaml
-from torch_geometric.datasets import Planetoid
+from torch_geometric.datasets import Planetoid, PPI, Reddit
+from ogb.nodeproppred import PygNodePropPredDataset
+import torch_geometric.transforms as T
 from utils.pe import compute_pe
 from config import Config
 from utils.seed import set_seed
@@ -38,7 +40,18 @@ def main():
     pe_dir = config['paths'].get('pe_dir', f'./data/Planetoid/{dataset_name}/processed')
 
     # Load Dataset
-    dataset = Planetoid(root=dataset_root, name=dataset_name)
+    if dataset_name in ['Cora', 'CiteSeer', 'PubMed']:
+        dataset = Planetoid(root=dataset_root, name=dataset_name)
+    elif dataset_name == 'ogbn-arxiv':
+        dataset = PygNodePropPredDataset(name=dataset_name, root=dataset_root)
+        dataset.transform = T.ToUndirected()
+    elif dataset_name == 'PPI':
+        dataset = PPI(root=dataset_root)
+    elif dataset_name == 'Reddit':
+        dataset = Reddit(root=dataset_root)
+    else:
+        raise ValueError(f"Unknown dataset: {dataset_name}")
+
     data = dataset[0]
     
     print(f"Nodes: {data.num_nodes}, Edges: {data.num_edges}")

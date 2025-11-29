@@ -1,6 +1,8 @@
 import torch
 import torch.nn.functional as F
-from torch_geometric.datasets import Planetoid
+from torch_geometric.datasets import Planetoid, PPI, Reddit
+from ogb.nodeproppred import PygNodePropPredDataset
+import torch_geometric.transforms as T
 from torch_cluster import random_walk
 from torch_geometric.loader import NeighborLoader
 from model.GraphJEPA import GraphJEPA
@@ -76,10 +78,21 @@ if __name__ == "__main__":
     set_seed(Config.seed)
     
     # Load Dataset
-    dataset = Planetoid(root=Config.dataset_root, name=Config.dataset_name)
+    if Config.dataset_name in ['Cora', 'CiteSeer', 'PubMed']:
+        dataset = Planetoid(root=Config.dataset_root, name=Config.dataset_name)
+    elif Config.dataset_name == 'ogbn-arxiv':
+        dataset = PygNodePropPredDataset(name=Config.dataset_name, root=Config.dataset_root)
+        dataset.transform = T.ToUndirected()
+    elif Config.dataset_name == 'PPI':
+        dataset = PPI(root=Config.dataset_root)
+    elif Config.dataset_name == 'Reddit':
+        dataset = Reddit(root=Config.dataset_root)
+    else:
+        raise ValueError(f"Unknown dataset: {Config.dataset_name}")
+
     data = dataset[0]
     
-    print(f"Dataset: {dataset.name}")
+    print(f"Dataset: {Config.dataset_name}")
     print(f"Nodes: {data.num_nodes}, Edges: {data.num_edges}, Features: {data.num_features}")
     
     # Phase 1: Geometry Pre-processing (Load PE)
