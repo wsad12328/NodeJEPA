@@ -4,7 +4,7 @@ dataset:
 
 model:
   hidden_channels: 256
-  num_layers: 3
+  num_layers: 2
   ema_decay: 0.996
   dropout: 0.5
   gnn_type: 'GCN'
@@ -15,7 +15,8 @@ pe:
 
 sampling:
   walk_length: 8
-  num_targets: 8
+  num_targets: 16
+  num_neighbors: [-1, -1, -1, -1, -1, -1]
 
 training:
   lr: 0.001

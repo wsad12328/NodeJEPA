@@ -18,6 +18,7 @@ class Config:
     
     walk_length = 8
     num_targets = 4
+    num_neighbors = [-1] * 6
 
     lr = 0.001
     weight_decay = 5e-4
@@ -26,6 +27,7 @@ class Config:
     tau_start = 0.996
     tau_end = 1.0
     seed = 42
+    seeds = [42]
     
     checkpoint_dir = './checkpoints'
     model_save_path = 'graph_jepa_pretrained.pth'
@@ -55,6 +57,7 @@ class Config:
         
         cls.walk_length = config_dict['sampling']['walk_length']
         cls.num_targets = config_dict['sampling']['num_targets']
+        cls.num_neighbors = config_dict['sampling'].get('num_neighbors', [-1] * 6)
         
         cls.lr = config_dict['training']['lr']
         cls.weight_decay = config_dict['training']['weight_decay']
@@ -63,6 +66,7 @@ class Config:
         cls.tau_start = config_dict['training']['tau_start']
         cls.tau_end = config_dict['training']['tau_end']
         cls.seed = config_dict['training'].get('seed', 42)
+        cls.seeds = config_dict['training'].get('seeds', [42])
         
         cls.checkpoint_dir = config_dict['paths']['checkpoint_dir']
         cls.model_save_path = config_dict['paths']['model_save_path']

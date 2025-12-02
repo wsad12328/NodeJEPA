@@ -68,12 +68,17 @@ def train_epoch(model, loader, optimizer, device, pe, current_tau):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset', type=str, default='PubMed', help='Dataset name')
+    parser.add_argument('--dataset', type=str, default='Cora', help='Dataset name')
+    parser.add_argument('--seed', type=int, default=None, help='Random seed')
     args = parser.parse_args()
     
     # Load Config
     Config.load(args.dataset)
     
+    # Override seed if provided
+    if args.seed is not None:
+        Config.seed = args.seed
+    print(f"Using seed: {Config.seed}")
     # Set Seed
     set_seed(Config.seed)
     
@@ -113,7 +118,7 @@ if __name__ == "__main__":
     
     train_loader = NeighborLoader(
         data,
-        num_neighbors=[-1]*6,
+        num_neighbors=Config.num_neighbors,
         batch_size=Config.batch_size,
         shuffle=True,
         generator=g
@@ -153,17 +158,8 @@ if __name__ == "__main__":
         loss = train_epoch(model, train_loader, optimizer, device, pe, tau)
         
         print(f"Epoch {epoch+1}/{Config.num_epochs} | Loss: {loss:.4f} | Tau: {tau:.4f}")
-        
-        if (epoch + 1) % 10 == 0:
-            save_path = os.path.join(checkpoint_dir, f'graph_jepa_epoch_{epoch+1}.pth')
-            torch.save({
-                'model_state_dict': model.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'epoch': epoch + 1,
-                'loss': loss
-            }, save_path)
             
-    final_path = os.path.join(checkpoint_dir, 'graph_jepa_pretrained.pth')
+    final_path = os.path.join(checkpoint_dir, f'graph_jepa_pretrained_seed_{Config.seed}.pth')
     torch.save({
         'model_state_dict': model.state_dict(),
         'optimizer_state_dict': optimizer.state_dict(),

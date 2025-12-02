@@ -16,6 +16,7 @@ pe:
 sampling:
   walk_length: 8
   num_targets: 8
+  num_neighbors: [25, 15, 10]
 
 training:
   lr: 0.001

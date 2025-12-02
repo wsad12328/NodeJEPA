@@ -16,6 +16,7 @@ pe:
 sampling:
   walk_length: 8
   num_targets: 8
+  num_neighbors: [-1, -1, -1, -1, -1, -1]
 
 training:
   lr: 0.001
@@ -25,6 +26,7 @@ training:
   tau_start: 0.996
   tau_end: 1.0
   seed: 42
+  
 
 paths:
   checkpoint_dir: './checkpoints'
